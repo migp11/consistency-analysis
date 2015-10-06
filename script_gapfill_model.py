@@ -43,6 +43,8 @@ REACTION_WEIGHT = 10
 ADD_TRANSPORTS = False
 EPSILON = 1e-4
 DEBUG = False
+SOLVER = ""
+SPONTANEOUS = "SPONTANEOUS"
 
 def load_parameters(fname):
     param_dict = {}
@@ -62,6 +64,8 @@ def load_parameters(fname):
     global TRANSPORT_WEIGHT
     global EPSILON
     global DEBUG
+    global SOLVER
+    global SPONTANEOUS
     
     METAMODEL_PATH = param_dict["metamodel_path"].encode()
     RXN2ECS_PATH = param_dict["rxn2ecs_path"].encode()
@@ -79,6 +83,9 @@ def load_parameters(fname):
     EPSILON_WEIGHT = param_dict["epsilon"]
     DEBUG = bool(param_dict["debug"])
     ADD_TRANSPORTS = param_dict["add_transporters"]
+
+    SOLVER = bool(param_dict["solver"])
+    SPONTANEOUS = param_dict["spontaneous"]
 
 def f_rxn(x):
     return re.search(REACTION_PREFIX,x) 
@@ -100,7 +107,7 @@ try:
     load_parameters(param_fname)
     print "Parameters loaded from %s " % param_fname
 except:
-    print "The parameter file %s nwas not found, running with defaul parameter" % param_fname
+    print "The parameter file %s not found, running with defaul parameter" % param_fname
     
 
 
@@ -190,9 +197,10 @@ print "==============================================================="
 ######################################################
 
 if ADD_TRANSPORTS:
+    # Exclude metabolites which already have an exchange flux
     efflux_metabolites = [r.metabolites.keys()[0].id for r in metamodel.reactions if f_Ex(r.id)]
     metabolites = [m.id for m in metamodel.metabolites if m.endswith('_c')]
-    metabolites_to_expand = set(metabolites) - set(efflux_metabolites) - set(['cpd00971_c', 'cpd15666_c'])
+    metabolites_to_expand = set(metabolites) - set(efflux_metabolites)
 
     SUX = utils.add_expantion_fluxes(metamodel,metabolites={metamodel.metabolites.get_by_id(m):-1 for m in metabolites_to_expand}, prefix='X_')
     for r in SUX.reactions:
@@ -210,9 +218,12 @@ consistent_reactions = list(set(model_reactions) - set(blocked_reactions))
 
 
 model_ECs = {rxn2ec[r.id] for r in model.reactions if r.id in rxn2ec}
-unweigthed_rxn = [r.id for r in metamodel.genes.SPONTANEOUS.reactions]
-unweigthed_rxn += [r for ec in model_ECs if ec in ECs_rxns for r in ECs_rxns[ec] if r not in model_reactions]
+unweigthed_rxn = []
+if SPONTANEOUS in metamodel.genes:
+    spontaneous_rxns = metamodel.genes.get_by_id(SPONTANEOUS).reactions
+    unweigthed_rxn += [r.id for r in spontaneous_rxns]
 
+unweigthed_rxn += [r for ec in model_ECs if ec in ECs_rxns for r in ECs_rxns[ec] if r not in model_reactions]
 unweigthed_rxn = set(unweigthed_rxn)
 
 weights = {}
