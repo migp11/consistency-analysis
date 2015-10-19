@@ -1,0 +1,23 @@
+{
+	"metamodel_path": "Data/MM166.1.xml",
+	"rxn2ecs_path": "Data/rxn2ec.csv",
+
+	"output_model_suffix": "MM66.1.gapfilled",
+	"output_folder": "./outputs/",
+
+	"reaction_prefix": "rxn|new",
+	"biomass_prefix": "bio",
+	"exchange_prefix": "EX|DM|EFF",
+	"spontaneous": "SPONTANEOUS",
+
+	"reaction_weight": 10,
+	"transport_weight": 50,
+	"epsilon": 0.001,
+	"zero_tolerance": 1e-7,
+	"solver": "gurobi",
+	"use_milp": 0,
+	"debug": 0,
+	"add_transporters": 0,
+	"expand_metamodel": 0,
+	"use_coupling": 0
+}

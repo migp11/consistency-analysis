@@ -18,6 +18,7 @@
 
 import csv, re
 from cobra.core import Gene,Model
+from settings import REACTION_PREFIX
 
 
 def read_ec_numbers(fname):
@@ -261,3 +262,15 @@ def csv_save(a_list,fname):
     x = w.writerows(a_list)
     f.close()
     return x
+
+
+
+def f_rxn(x):
+    return re.search(REACTION_PREFIX,x) 
+
+def f_ex(x):
+    return re.search(EXCHANGE_PREFIX,x)
+
+def f_flux(x):
+    return f_ex(x) or f_rxn(x) 
+

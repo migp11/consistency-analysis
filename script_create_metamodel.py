@@ -1,3 +1,4 @@
+#!/usr/bin/python
 # Python script to perform consistency analysis on metabolic models
 # Copyright (C) 2015  Miguel Ponce de Leon
 # Contact: miguelponcedeleon@gmail.com

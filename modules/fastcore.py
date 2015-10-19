@@ -28,7 +28,9 @@ from cobra.flux_analysis.variability import find_blocked_reactions
 
 
 
-def fast_core(model,C,epsilon=1e-4, zero_tolerance=1e-9, solver=None, weights={}, debug=False, allow_dilution = False):
+def fast_core( model,C,epsilon=1e-4, zero_tolerance=1e-9, 
+               solver=None, weights={}, debug=False, 
+               allow_dilution=False, use_milp=False):
 
     model = model.copy()
     if allow_dilution:
@@ -54,7 +56,8 @@ def fast_core(model,C,epsilon=1e-4, zero_tolerance=1e-9, solver=None, weights={}
     if len(weights) == 0:
         weights = {r:10.0 for r in P}
 
-    Supp = find_sparse_mode(model,J,P,singleton,weights=weights,epsilon=epsilon,solver=solver)
+    Supp = find_sparse_mode(model,J,P,singleton,weights=weights,
+                            epsilon=epsilon,solver=solver,use_milp=use_milp)
     
 
     if len(J - set(Supp)) > 0:
@@ -112,11 +115,12 @@ def fast_core(model,C,epsilon=1e-4, zero_tolerance=1e-9, solver=None, weights={}
 
     return A
 
-def find_sparse_mode(model,J,P,singleton,weights={},epsilon=1e-4, zero_tolerance=1e-9, solver=None):
+def find_sparse_mode( model,J,P,singleton, weights={}, epsilon=1e-4, 
+                      zero_tolerance=1e-9, solver=None, use_milp=False):
     
     if len(J) == 0:
         return []
-    solution_dict = LP7(model,J,epsilon=epsilon)
+    solution_dict = LP7(model,J,epsilon=epsilon,solver=solver)
 
     Supp = {k for k,v in solution_dict.items() if (abs(v) - 0.99 * epsilon) > zero_tolerance}
     K = set(J).intersection(Supp)
@@ -124,7 +128,7 @@ def find_sparse_mode(model,J,P,singleton,weights={},epsilon=1e-4, zero_tolerance
     if len(K) == 0:
         return []
     
-    solution_dict = LP9(model,K,P,weights=weights,epsilon=1.0,solver=solver)
+    solution_dict = LP9(model,K,P,weights=weights,epsilon=1.0,solver=solver,use_milp=use_milp)
     Supp = {k for k,v in solution_dict.items() if (abs(v) - 0.99 * epsilon) > zero_tolerance}
 
     return Supp
@@ -215,35 +219,8 @@ def fast_consistency_check(model,the_reactions=None, epsilon=1e-4, zero_toleranc
 
     return list(consistent)
 
-def create_LP7(model,the_reactions=None,epsilon=1e-4):
-    model_lp7 = model.copy()
 
-    for reaction in model_lp7.reactions:
-        reaction.objective_coefficient = 0
-
-    if the_reactions is None:
-        the_reactions = [r.id for r in model_lp7.reactions]
-    elif hasattr(list(the_reactions)[0], 'id'):
-        the_reactions = [r.id for r in the_reactions]
-
-    for i,reaction in enumerate(the_reactions):
-        reaction = model_lp7.reactions.get_by_id(reaction)
-        dummy_reaction = Reaction("dummy_rxn_" + reaction.id)
-        dummy_reaction.lower_bound = 0
-        dummy_reaction.upper_bound = epsilon
-        dummy_reaction.objective_coefficient = 1
-        model_lp7.add_reaction(dummy_reaction)
-
-        dummy_metabolite = Metabolite("dummy_met_" + reaction.id)
-        dummy_metabolite._constraint_sense = "L"
-        dummy_metabolite._bound = 0
-
-        reaction.add_metabolites({dummy_metabolite: -1})
-        dummy_reaction.add_metabolites({dummy_metabolite: 1})
-
-    return model_lp7
-
-def LP7(model,the_reactions=None,epsilon=1e-3):
+def LP7(model,the_reactions=None,epsilon=1e-3,solver=None):
     model_lp7 = model.copy()
     
     for reaction in model_lp7.reactions:
@@ -270,7 +247,7 @@ def LP7(model,the_reactions=None,epsilon=1e-3):
         reaction.add_metabolites({dummy_metabolite: -1})
         dummy_reaction.add_metabolites({dummy_metabolite: 1})
 
-    model_lp7.optimize()
+    model_lp7.optimize(solver=solver)
     if model_lp7.solution is None or model_lp7.solution.x_dict is None:
         print "INFEASIBLE LP7"
         return {}
@@ -278,10 +255,9 @@ def LP7(model,the_reactions=None,epsilon=1e-3):
     
     return dict([(k,v) for k,v in model_lp7.solution.x_dict.items() if not k.startswith('dummy_')])
 
-def LP9(model,K,P,weights={},epsilon=1e-4,solver=None,scaling_factor=1e3):
+def LP9(model,K,P,weights={},epsilon=1e-4,solver=None,scaling_factor=1e3,use_milp=False):
     model = model.copy()
 
-    #scaling_factor = 1.0e5
     scaling_factor = 1/epsilon
     for reaction in model.reactions:
         reaction.objective_coefficient = 0
@@ -291,31 +267,40 @@ def LP9(model,K,P,weights={},epsilon=1e-4,solver=None,scaling_factor=1e3):
     for reaction in P:
         reaction = model.reactions.get_by_id(reaction)
         dummy_reaction = Reaction("dummy_rxn_" + reaction.id)
-        dummy_reaction.lower_bound = 0
-        dummy_reaction.upper_bound = 10000
+        dummy_reaction.lower_bound = 0.
+        if use_milp:
+            dummy_reaction.upper_bound = 1.
+            dummy_reaction.variable_kind = 'integer'
+        else:
+            dummy_reaction.upper_bound = 1000.
+        
         dummy_reaction.objective_coefficient = weights[reaction.id]
-
         model.add_reaction(dummy_reaction)
 
         dummy_metabolite = Metabolite("dummy_met_ub_" + reaction.id)
         dummy_metabolite._constraint_sense = "L"
-        dummy_metabolite._bound = 0
-        reaction.add_metabolites({dummy_metabolite: 1})
-        dummy_reaction.add_metabolites({dummy_metabolite: -1})
+        dummy_metabolite._bound = 0.
+        reaction.add_metabolites({dummy_metabolite: 1.})
+        if use_milp:
+            dummy_reaction.add_metabolites({dummy_metabolite: -1000})
+        else:
+            dummy_reaction.add_metabolites({dummy_metabolite: -1})
 
         dummy_metabolite = Metabolite("dummy_met_lb_" + reaction.id)
         dummy_metabolite._constraint_sense = "L"
-        dummy_metabolite._bound = 0
-        reaction.add_metabolites({dummy_metabolite: -1})
-        dummy_reaction.add_metabolites({dummy_metabolite: -1})
+        dummy_metabolite._bound = 0.
+        reaction.add_metabolites({dummy_metabolite: -1.})
+        if use_milp:
+            dummy_reaction.add_metabolites({dummy_metabolite: -1000.0})
+        else:
+            dummy_reaction.add_metabolites({dummy_metabolite: -1.})
 
     for reaction in K:
         reaction = model.reactions.get_by_id(reaction)
         dummy_metabolite = Metabolite("dummy_met_lb_" + reaction.id)
         dummy_metabolite._constraint_sense = "G"
-        #dummy_metabolite._bound = scaling_factor * epsilon
-        dummy_metabolite._bound = 1
-        reaction.add_metabolites({dummy_metabolite: 1})
+        dummy_metabolite._bound = 1.
+        reaction.add_metabolites({dummy_metabolite: 1.})
 
     
     model.optimize(objective_sense='minimize',solver=solver)
